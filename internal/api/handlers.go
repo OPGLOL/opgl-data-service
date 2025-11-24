@@ -3,19 +3,17 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/OPGLOL/opgl-data/internal/services"
-	"github.com/gorilla/mux"
 )
 
 // Handler manages HTTP request handlers for the data service
 type Handler struct {
-	riotService *services.RiotService
+	riotService services.RiotServiceInterface
 }
 
 // NewHandler creates a new Handler instance
-func NewHandler(riotService *services.RiotService) *Handler {
+func NewHandler(riotService services.RiotServiceInterface) *Handler {
 	return &Handler{
 		riotService: riotService,
 	}
@@ -31,14 +29,27 @@ func (handler *Handler) HealthCheck(writer http.ResponseWriter, request *http.Re
 	json.NewEncoder(writer).Encode(response)
 }
 
-// GetSummonerByRiotID handles summoner lookup by Riot ID (gameName#tagLine)
+// GetSummonerByRiotID handles summoner lookup by Riot ID with JSON body
 func (handler *Handler) GetSummonerByRiotID(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	region := vars["region"]
-	gameName := vars["gameName"]
-	tagLine := vars["tagLine"]
+	// Parse JSON request body
+	var summonerRequest struct {
+		Region   string `json:"region"`
+		GameName string `json:"gameName"`
+		TagLine  string `json:"tagLine"`
+	}
 
-	summoner, err := handler.riotService.GetSummonerByRiotID(region, gameName, tagLine)
+	if err := json.NewDecoder(request.Body).Decode(&summonerRequest); err != nil {
+		http.Error(writer, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if summonerRequest.Region == "" || summonerRequest.GameName == "" || summonerRequest.TagLine == "" {
+		http.Error(writer, "region, gameName, and tagLine are required", http.StatusBadRequest)
+		return
+	}
+
+	summoner, err := handler.riotService.GetSummonerByRiotID(summonerRequest.Region, summonerRequest.GameName, summonerRequest.TagLine)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -48,39 +59,54 @@ func (handler *Handler) GetSummonerByRiotID(writer http.ResponseWriter, request 
 	json.NewEncoder(writer).Encode(summoner)
 }
 
-// GetSummoner handles summoner lookup requests
-// DEPRECATED: Use GetSummonerByRiotID instead
-func (handler *Handler) GetSummoner(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	region := vars["region"]
-	summonerName := vars["summonerName"]
+// GetMatchesByRiotID handles match history requests using Riot ID or PUUID with JSON body
+func (handler *Handler) GetMatchesByRiotID(writer http.ResponseWriter, request *http.Request) {
+	// Parse JSON request body
+	var matchRequest struct {
+		Region   string `json:"region"`
+		GameName string `json:"gameName"`
+		TagLine  string `json:"tagLine"`
+		PUUID    string `json:"puuid"`
+		Count    int    `json:"count"`
+	}
 
-	summoner, err := handler.riotService.GetSummonerByName(region, summonerName)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusInternalServerError)
+	if err := json.NewDecoder(request.Body).Decode(&matchRequest); err != nil {
+		http.Error(writer, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(summoner)
-}
+	// Validate required fields - either (gameName + tagLine) OR puuid must be provided
+	if matchRequest.Region == "" {
+		http.Error(writer, "region is required", http.StatusBadRequest)
+		return
+	}
 
-// GetMatches handles match history requests
-func (handler *Handler) GetMatches(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	region := vars["region"]
-	puuid := vars["puuid"]
+	var puuid string
 
-	// Get count from query parameter (default: 20)
-	countStr := request.URL.Query().Get("count")
-	count := 20
-	if countStr != "" {
-		if parsedCount, err := strconv.Atoi(countStr); err == nil && parsedCount > 0 {
-			count = parsedCount
+	// If PUUID is provided, use it directly (for internal gateway use)
+	if matchRequest.PUUID != "" {
+		puuid = matchRequest.PUUID
+	} else if matchRequest.GameName != "" && matchRequest.TagLine != "" {
+		// Otherwise, look up PUUID using Riot ID
+		summoner, err := handler.riotService.GetSummonerByRiotID(matchRequest.Region, matchRequest.GameName, matchRequest.TagLine)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
 		}
+		puuid = summoner.PUUID
+	} else {
+		http.Error(writer, "either (gameName and tagLine) or puuid is required", http.StatusBadRequest)
+		return
 	}
 
-	matches, err := handler.riotService.GetMatchHistory(region, puuid, count)
+	// Set default count if not provided
+	count := matchRequest.Count
+	if count <= 0 {
+		count = 20
+	}
+
+	// Get match history using PUUID
+	matches, err := handler.riotService.GetMatchHistory(matchRequest.Region, puuid, count)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return

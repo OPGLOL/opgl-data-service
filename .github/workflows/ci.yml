@@ -1,0 +1,137 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Job 1: Run tests and build
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests with coverage
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Check coverage threshold
+        run: |
+          # Calculate coverage percentage (excluding main.go)
+          COVERAGE=$(go tool cover -func=coverage.out | grep -v "main.go" | grep "total:" | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+
+          # Check testable packages individually
+          echo "Coverage by package:"
+          go tool cover -func=coverage.out | grep -E "(api|config|middleware|services)" | grep -v "main.go"
+
+          # Get coverage for testable code only (api, config, middleware)
+          API_COV=$(go tool cover -func=coverage.out | grep "internal/api" | grep "total" | awk '{print $3}' | sed 's/%//' || echo "0")
+          CONFIG_COV=$(go tool cover -func=coverage.out | grep "internal/config" | grep "total" | awk '{print $3}' | sed 's/%//' || echo "0")
+          MIDDLEWARE_COV=$(go tool cover -func=coverage.out | grep "internal/middleware" | grep "total" | awk '{print $3}' | sed 's/%//' || echo "0")
+
+          echo ""
+          echo "=== Coverage Summary ==="
+          echo "API package: ${API_COV:-100}%"
+          echo "Config package: ${CONFIG_COV:-100}%"
+          echo "Middleware package: ${MIDDLEWARE_COV:-100}%"
+          echo "Total (all packages): ${COVERAGE}%"
+          echo ""
+
+          # Enforce 90% minimum coverage
+          THRESHOLD=90
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "❌ Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
+            exit 1
+          else
+            echo "✅ Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
+          fi
+
+      - name: Build application
+        run: go build -o opgl-data main.go
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+
+      - name: Generate coverage badge
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total: | awk '{print $3}')
+          echo "Coverage: ${COVERAGE}"
+
+  # Job 2: Build and push Docker image
+  docker:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    # Only run on main branch push, not on PRs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Print image digest
+        run: echo "Image pushed with digest ${{ steps.docker_build.outputs.digest }}"

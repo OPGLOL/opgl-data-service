@@ -16,6 +16,8 @@ type RiotService struct {
 	apiKey string
 	// HTTP client with configured timeout
 	httpClient *http.Client
+	// Base URL override for testing (optional)
+	baseURLOverride string
 }
 
 // NewRiotService creates a new RiotService with the provided API key
@@ -25,6 +27,16 @@ func NewRiotService(apiKey string) *RiotService {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		baseURLOverride: "",
+	}
+}
+
+// NewRiotServiceWithBaseURL creates a RiotService with a custom base URL (for testing)
+func NewRiotServiceWithBaseURL(apiKey string, baseURL string, httpClient *http.Client) *RiotService {
+	return &RiotService{
+		apiKey:          apiKey,
+		httpClient:      httpClient,
+		baseURLOverride: baseURL,
 	}
 }
 
@@ -106,12 +118,21 @@ func (riotService *RiotService) makeRequest(url string, target interface{}) erro
 	return nil
 }
 
+// buildURL creates the full URL, using baseURLOverride if set (for testing)
+func (riotService *RiotService) buildURL(baseURL string, path string) string {
+	if riotService.baseURLOverride != "" {
+		return riotService.baseURLOverride + path
+	}
+	return fmt.Sprintf("https://%s%s", baseURL, path)
+}
+
 // GetSummonerByRiotID retrieves summoner information using Riot ID (gameName#tagLine)
 // This is the new Riot API method that replaced the deprecated by-name endpoint
 func (riotService *RiotService) GetSummonerByRiotID(region string, gameName string, tagLine string) (*models.Summoner, error) {
 	// Step 1: Get account info (PUUID) using Riot Account API
-	accountURL := riotService.getMatchRegionalURL(region) // Account API uses same routing as match API
-	accountEndpoint := fmt.Sprintf("https://%s/riot/account/v1/accounts/by-riot-id/%s/%s", accountURL, gameName, tagLine)
+	accountURL := riotService.getMatchRegionalURL(region)
+	accountPath := fmt.Sprintf("/riot/account/v1/accounts/by-riot-id/%s/%s", gameName, tagLine)
+	accountEndpoint := riotService.buildURL(accountURL, accountPath)
 
 	var accountInfo struct {
 		PUUID    string `json:"puuid"`
@@ -130,21 +151,8 @@ func (riotService *RiotService) GetSummonerByRiotID(region string, gameName stri
 // GetSummonerByPUUID retrieves summoner information by PUUID
 func (riotService *RiotService) GetSummonerByPUUID(region string, puuid string) (*models.Summoner, error) {
 	baseURL := riotService.getRegionalURL(region)
-	url := fmt.Sprintf("https://%s/lol/summoner/v4/summoners/by-puuid/%s", baseURL, puuid)
-
-	var summoner models.Summoner
-	if err := riotService.makeRequest(url, &summoner); err != nil {
-		return nil, fmt.Errorf("failed to get summoner: %w", err)
-	}
-
-	return &summoner, nil
-}
-
-// GetSummonerByName retrieves summoner information by summoner name and region
-// DEPRECATED: This endpoint was deprecated by Riot. Use GetSummonerByRiotID instead
-func (riotService *RiotService) GetSummonerByName(region string, summonerName string) (*models.Summoner, error) {
-	baseURL := riotService.getRegionalURL(region)
-	url := fmt.Sprintf("https://%s/lol/summoner/v4/summoners/by-name/%s", baseURL, summonerName)
+	path := fmt.Sprintf("/lol/summoner/v4/summoners/by-puuid/%s", puuid)
+	url := riotService.buildURL(baseURL, path)
 
 	var summoner models.Summoner
 	if err := riotService.makeRequest(url, &summoner); err != nil {
@@ -157,9 +165,8 @@ func (riotService *RiotService) GetSummonerByName(region string, summonerName st
 // GetMatchHistory retrieves recent match IDs for a player and fetches full match details
 func (riotService *RiotService) GetMatchHistory(region string, puuid string, count int) ([]models.Match, error) {
 	baseURL := riotService.getMatchRegionalURL(region)
-
-	// Get match IDs
-	matchListURL := fmt.Sprintf("https://%s/lol/match/v5/matches/by-puuid/%s/ids?start=0&count=%d", baseURL, puuid, count)
+	path := fmt.Sprintf("/lol/match/v5/matches/by-puuid/%s/ids?start=0&count=%d", puuid, count)
+	matchListURL := riotService.buildURL(baseURL, path)
 
 	var matchIDs []string
 	if err := riotService.makeRequest(matchListURL, &matchIDs); err != nil {
@@ -183,7 +190,8 @@ func (riotService *RiotService) GetMatchHistory(region string, puuid string, cou
 // GetMatchDetails retrieves detailed information for a specific match
 func (riotService *RiotService) GetMatchDetails(region string, matchID string) (*models.Match, error) {
 	baseURL := riotService.getMatchRegionalURL(region)
-	url := fmt.Sprintf("https://%s/lol/match/v5/matches/%s", baseURL, matchID)
+	path := fmt.Sprintf("/lol/match/v5/matches/%s", matchID)
+	url := riotService.buildURL(baseURL, path)
 
 	var rawMatch struct {
 		Metadata struct {
