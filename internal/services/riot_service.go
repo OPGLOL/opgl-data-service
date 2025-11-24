@@ -106,7 +106,42 @@ func (riotService *RiotService) makeRequest(url string, target interface{}) erro
 	return nil
 }
 
+// GetSummonerByRiotID retrieves summoner information using Riot ID (gameName#tagLine)
+// This is the new Riot API method that replaced the deprecated by-name endpoint
+func (riotService *RiotService) GetSummonerByRiotID(region string, gameName string, tagLine string) (*models.Summoner, error) {
+	// Step 1: Get account info (PUUID) using Riot Account API
+	accountURL := riotService.getMatchRegionalURL(region) // Account API uses same routing as match API
+	accountEndpoint := fmt.Sprintf("https://%s/riot/account/v1/accounts/by-riot-id/%s/%s", accountURL, gameName, tagLine)
+
+	var accountInfo struct {
+		PUUID    string `json:"puuid"`
+		GameName string `json:"gameName"`
+		TagLine  string `json:"tagLine"`
+	}
+
+	if err := riotService.makeRequest(accountEndpoint, &accountInfo); err != nil {
+		return nil, fmt.Errorf("failed to get account info: %w", err)
+	}
+
+	// Step 2: Get summoner details using PUUID
+	return riotService.GetSummonerByPUUID(region, accountInfo.PUUID)
+}
+
+// GetSummonerByPUUID retrieves summoner information by PUUID
+func (riotService *RiotService) GetSummonerByPUUID(region string, puuid string) (*models.Summoner, error) {
+	baseURL := riotService.getRegionalURL(region)
+	url := fmt.Sprintf("https://%s/lol/summoner/v4/summoners/by-puuid/%s", baseURL, puuid)
+
+	var summoner models.Summoner
+	if err := riotService.makeRequest(url, &summoner); err != nil {
+		return nil, fmt.Errorf("failed to get summoner: %w", err)
+	}
+
+	return &summoner, nil
+}
+
 // GetSummonerByName retrieves summoner information by summoner name and region
+// DEPRECATED: This endpoint was deprecated by Riot. Use GetSummonerByRiotID instead
 func (riotService *RiotService) GetSummonerByName(region string, summonerName string) (*models.Summoner, error) {
 	baseURL := riotService.getRegionalURL(region)
 	url := fmt.Sprintf("https://%s/lol/summoner/v4/summoners/by-name/%s", baseURL, summonerName)

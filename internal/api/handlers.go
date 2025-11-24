@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
 	"github.com/OPGLOL/opgl-data/internal/services"
+	"github.com/gorilla/mux"
 )
 
 // Handler manages HTTP request handlers for the data service
@@ -31,7 +31,25 @@ func (handler *Handler) HealthCheck(writer http.ResponseWriter, request *http.Re
 	json.NewEncoder(writer).Encode(response)
 }
 
+// GetSummonerByRiotID handles summoner lookup by Riot ID (gameName#tagLine)
+func (handler *Handler) GetSummonerByRiotID(writer http.ResponseWriter, request *http.Request) {
+	vars := mux.Vars(request)
+	region := vars["region"]
+	gameName := vars["gameName"]
+	tagLine := vars["tagLine"]
+
+	summoner, err := handler.riotService.GetSummonerByRiotID(region, gameName, tagLine)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(summoner)
+}
+
 // GetSummoner handles summoner lookup requests
+// DEPRECATED: Use GetSummonerByRiotID instead
 func (handler *Handler) GetSummoner(writer http.ResponseWriter, request *http.Request) {
 	vars := mux.Vars(request)
 	region := vars["region"]

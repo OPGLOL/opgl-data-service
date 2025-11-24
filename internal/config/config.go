@@ -30,7 +30,7 @@ func LoadConfig() *Config {
 
 	serverPort := os.Getenv("PORT")
 	if serverPort == "" {
-		serverPort = "8080"
+		serverPort = "8081"
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
