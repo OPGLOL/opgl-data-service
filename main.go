@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/OPGLOL/opgl-data/internal/api"
-	"github.com/OPGLOL/opgl-data/internal/config"
-	"github.com/OPGLOL/opgl-data/internal/middleware"
-	"github.com/OPGLOL/opgl-data/internal/services"
+	"github.com/OPGLOL/opgl-data-service/internal/api"
+	"github.com/OPGLOL/opgl-data-service/internal/config"
+	"github.com/OPGLOL/opgl-data-service/internal/middleware"
+	"github.com/OPGLOL/opgl-data-service/internal/services"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )

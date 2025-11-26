@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/OPGLOL/opgl-data/internal/models"
+	"github.com/OPGLOL/opgl-data-service/internal/models"
 )
 
 // RiotService handles all interactions with the Riot Games API

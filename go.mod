@@ -1,4 +1,4 @@
-module github.com/OPGLOL/opgl-data
+module github.com/OPGLOL/opgl-data-service
 
 go 1.21
 

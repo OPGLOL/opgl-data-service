@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/OPGLOL/opgl-data/internal/models"
+	"github.com/OPGLOL/opgl-data-service/internal/models"
 )
 
 // MockRiotService is a mock implementation of RiotServiceInterface for testing

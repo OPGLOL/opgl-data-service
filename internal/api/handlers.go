@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/OPGLOL/opgl-data/internal/services"
+	"github.com/OPGLOL/opgl-data-service/internal/services"
 )
 
 // Handler manages HTTP request handlers for the data service

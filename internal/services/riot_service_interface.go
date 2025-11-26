@@ -1,6 +1,6 @@
 package services
 
-import "github.com/OPGLOL/opgl-data/internal/models"
+import "github.com/OPGLOL/opgl-data-service/internal/models"
 
 // RiotServiceInterface defines the interface for Riot API operations
 // This allows for easy mocking in tests
